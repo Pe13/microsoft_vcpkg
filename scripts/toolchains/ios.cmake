@@ -60,27 +60,110 @@ if(NOT _VCPKG_IOS_TOOLCHAIN)
         set(CMAKE_SYSTEM_PROCESSOR ${_vcpkg_ios_system_processor})
     endif()
 
-    # If VCPKG_OSX_ARCHITECTURES or VCPKG_OSX_SYSROOT is set in the triplet, they will take priority,
-    # so the following will be no-ops.
-    set(CMAKE_OSX_ARCHITECTURES "${_vcpkg_ios_target_architecture}" CACHE STRING "Build architectures for iOS")
-    if(_vcpkg_ios_sysroot)
-        set(CMAKE_OSX_SYSROOT ${_vcpkg_ios_sysroot} CACHE STRING "iOS sysroot")
+    if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+        # 1. Discover iOS Sysroot (iPhoneOS.sdk)
+        if(NOT DEFINED VCPKG_OSX_SYSROOT)
+            if(DEFINED ENV{VCPKG_IOS_SDK_PATH} AND EXISTS "$ENV{VCPKG_IOS_SDK_PATH}")
+                set(VCPKG_OSX_SYSROOT "$ENV{VCPKG_IOS_SDK_PATH}")
+            elseif(DEFINED ENV{SDKROOT} AND EXISTS "$ENV{SDKROOT}")
+                set(VCPKG_OSX_SYSROOT "$ENV{SDKROOT}")
+            elseif(EXISTS "/home/pi/cctools/SDK/iPhoneOS.sdk")
+                set(VCPKG_OSX_SYSROOT "/home/pi/cctools/SDK/iPhoneOS.sdk")
+            elseif(EXISTS "/home/pi/cctools-port/usage_examples/ios_toolchain/target/SDK/iPhoneOS16.5.sdk")
+                set(VCPKG_OSX_SYSROOT "/home/pi/cctools-port/usage_examples/ios_toolchain/target/SDK/iPhoneOS16.5.sdk")
+            endif()
+        endif()
+
+        if(NOT VCPKG_OSX_SYSROOT OR NOT EXISTS "${VCPKG_OSX_SYSROOT}")
+            message(FATAL_ERROR "Cross-compiling for iOS on Linux requires VCPKG_OSX_SYSROOT or environment variable VCPKG_IOS_SDK_PATH / SDKROOT pointing to a valid iPhoneOS.sdk directory.")
+        endif()
+
+        set(CMAKE_OSX_SYSROOT "${VCPKG_OSX_SYSROOT}" CACHE PATH "iOS SDK path" FORCE)
+
+        # 2. Deployment target version
+        if(NOT DEFINED VCPKG_OSX_DEPLOYMENT_TARGET)
+            set(VCPKG_OSX_DEPLOYMENT_TARGET "14.0")
+        endif()
+
+        set(Z_VCPKG_IOS_TARGET_TRIPLE "${_vcpkg_ios_target_architecture}-apple-ios${VCPKG_OSX_DEPLOYMENT_TARGET}")
+
+        # 3. Discover cctools-port Compilers and Binutils
+        # Include /home/pi/cctools/bin in HINTS in case PATH is not exported
+        set(Z_CCTOOLS_HINTS "/home/pi/cctools/bin" "/home/pi/cctools-port/usage_examples/ios_toolchain/target/bin")
+
+        find_program(Z_VCPKG_C_COMPILER NAMES aarch64-apple-darwin-clang clang HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+        find_program(Z_VCPKG_CXX_COMPILER NAMES aarch64-apple-darwin-clang++ clang++ HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+
+        get_filename_component(Z_CCTOOLS_BIN_DIR "${Z_VCPKG_C_COMPILER}" DIRECTORY)
+        if(COMMAND vcpkg_add_to_path)
+            vcpkg_add_to_path("${Z_CCTOOLS_BIN_DIR}")
+        endif()
+        string(FIND "$ENV{PATH}" "${Z_CCTOOLS_BIN_DIR}" _path_idx)
+        if(_path_idx EQUAL -1)
+            set(ENV{PATH} "${Z_CCTOOLS_BIN_DIR}:$ENV{PATH}")
+        endif()
+
+        set(CMAKE_C_COMPILER "${Z_VCPKG_C_COMPILER}" CACHE FILEPATH "C Compiler" FORCE)
+        set(CMAKE_CXX_COMPILER "${Z_VCPKG_CXX_COMPILER}" CACHE FILEPATH "C++ Compiler" FORCE)
+
+        set(CMAKE_C_COMPILER_TARGET "${Z_VCPKG_IOS_TARGET_TRIPLE}")
+        set(CMAKE_CXX_COMPILER_TARGET "${Z_VCPKG_IOS_TARGET_TRIPLE}")
+
+        find_program(Z_VCPKG_AR NAMES aarch64-apple-darwin-ar HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+        find_program(Z_VCPKG_RANLIB NAMES aarch64-apple-darwin-ranlib HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+        find_program(Z_VCPKG_INSTALL_NAME_TOOL NAMES aarch64-apple-darwin-install_name_tool HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+        find_program(Z_VCPKG_LIPO NAMES aarch64-apple-darwin-lipo HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+        find_program(Z_VCPKG_LD NAMES aarch64-apple-darwin-ld HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+        find_program(Z_VCPKG_STRIP NAMES aarch64-apple-darwin-strip HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
+
+        set(CMAKE_AR "${Z_VCPKG_AR}" CACHE FILEPATH "Archiver" FORCE)
+        set(CMAKE_RANLIB "${Z_VCPKG_RANLIB}" CACHE FILEPATH "Ranlib" FORCE)
+        set(CMAKE_INSTALL_NAME_TOOL "${Z_VCPKG_INSTALL_NAME_TOOL}" CACHE FILEPATH "Install Name Tool" FORCE)
+        set(CMAKE_LIPO "${Z_VCPKG_LIPO}" CACHE FILEPATH "Lipo Tool" FORCE)
+        set(CMAKE_LINKER "${Z_VCPKG_LD}" CACHE FILEPATH "Linker" FORCE)
+        set(CMAKE_STRIP "${Z_VCPKG_STRIP}" CACHE FILEPATH "Strip Tool" FORCE)
+
+        # 4. Target Flags Init
+        set(Z_VCPKG_IOS_FLAGS "-target ${Z_VCPKG_IOS_TARGET_TRIPLE} -isysroot ${VCPKG_OSX_SYSROOT} -miphoneos-version-min=${VCPKG_OSX_DEPLOYMENT_TARGET} -fuse-ld=${Z_VCPKG_LD} -Qunused-arguments")
+
+        string(APPEND CMAKE_C_FLAGS_INIT " ${Z_VCPKG_IOS_FLAGS} -fPIC ${VCPKG_C_FLAGS} ")
+        string(APPEND CMAKE_CXX_FLAGS_INIT " ${Z_VCPKG_IOS_FLAGS} -fPIC ${VCPKG_CXX_FLAGS} ")
+        string(APPEND CMAKE_C_FLAGS_DEBUG_INIT " ${VCPKG_C_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_CXX_FLAGS_DEBUG_INIT " ${VCPKG_CXX_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_C_FLAGS_RELEASE_INIT " ${VCPKG_C_FLAGS_RELEASE} ")
+        string(APPEND CMAKE_CXX_FLAGS_RELEASE_INIT " ${VCPKG_CXX_FLAGS_RELEASE} ")
+
+        string(APPEND CMAKE_MODULE_LINKER_FLAGS_INIT " ${Z_VCPKG_IOS_FLAGS} ${VCPKG_LINKER_FLAGS} ")
+        string(APPEND CMAKE_SHARED_LINKER_FLAGS_INIT " ${Z_VCPKG_IOS_FLAGS} ${VCPKG_LINKER_FLAGS} ")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_INIT " ${Z_VCPKG_IOS_FLAGS} ${VCPKG_LINKER_FLAGS} ")
+        string(APPEND CMAKE_MODULE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_SHARED_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_MODULE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+        string(APPEND CMAKE_SHARED_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+    else()
+        # If VCPKG_OSX_ARCHITECTURES or VCPKG_OSX_SYSROOT is set in the triplet, they will take priority
+        set(CMAKE_OSX_ARCHITECTURES "${_vcpkg_ios_target_architecture}" CACHE STRING "Build architectures for iOS")
+        if(_vcpkg_ios_sysroot)
+            set(CMAKE_OSX_SYSROOT ${_vcpkg_ios_sysroot} CACHE STRING "iOS sysroot")
+        endif()
+
+        string(APPEND CMAKE_C_FLAGS_INIT " -fPIC ${VCPKG_C_FLAGS} ")
+        string(APPEND CMAKE_CXX_FLAGS_INIT " -fPIC ${VCPKG_CXX_FLAGS} ")
+        string(APPEND CMAKE_C_FLAGS_DEBUG_INIT " ${VCPKG_C_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_CXX_FLAGS_DEBUG_INIT " ${VCPKG_CXX_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_C_FLAGS_RELEASE_INIT " ${VCPKG_C_FLAGS_RELEASE} ")
+        string(APPEND CMAKE_CXX_FLAGS_RELEASE_INIT " ${VCPKG_CXX_FLAGS_RELEASE} ")
+
+        string(APPEND CMAKE_MODULE_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
+        string(APPEND CMAKE_SHARED_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
+        string(APPEND CMAKE_MODULE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_SHARED_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+        string(APPEND CMAKE_MODULE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+        string(APPEND CMAKE_SHARED_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
     endif()
-
-    string(APPEND CMAKE_C_FLAGS_INIT " -fPIC ${VCPKG_C_FLAGS} ")
-    string(APPEND CMAKE_CXX_FLAGS_INIT " -fPIC ${VCPKG_CXX_FLAGS} ")
-    string(APPEND CMAKE_C_FLAGS_DEBUG_INIT " ${VCPKG_C_FLAGS_DEBUG} ")
-    string(APPEND CMAKE_CXX_FLAGS_DEBUG_INIT " ${VCPKG_CXX_FLAGS_DEBUG} ")
-    string(APPEND CMAKE_C_FLAGS_RELEASE_INIT " ${VCPKG_C_FLAGS_RELEASE} ")
-    string(APPEND CMAKE_CXX_FLAGS_RELEASE_INIT " ${VCPKG_CXX_FLAGS_RELEASE} ")
-
-    string(APPEND CMAKE_MODULE_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
-    string(APPEND CMAKE_SHARED_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
-    string(APPEND CMAKE_EXE_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
-    string(APPEND CMAKE_MODULE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
-    string(APPEND CMAKE_SHARED_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
-    string(APPEND CMAKE_EXE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
-    string(APPEND CMAKE_MODULE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
-    string(APPEND CMAKE_SHARED_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
-    string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
 endif()

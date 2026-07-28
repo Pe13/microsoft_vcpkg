@@ -65,6 +65,17 @@ function(vcpkg_build_make)
         vcpkg_list(SET no_parallel_make_opts ${arg_OPTIONS} V=1 -j 1 -f ${arg_MAKEFILE} ${arg_BUILD_TARGET})
         vcpkg_list(SET install_opts -j ${VCPKG_CONCURRENCY} -f ${arg_MAKEFILE} ${arg_INSTALL_TARGET} DESTDIR=${CURRENT_PACKAGES_DIR})
         vcpkg_list(SET no_parallel_install_opts -j 1 -f ${arg_MAKEFILE} ${arg_INSTALL_TARGET} DESTDIR=${CURRENT_PACKAGES_DIR})
+        if(VCPKG_DETECTED_CMAKE_STRIP)
+            vcpkg_list(APPEND install_opts "STRIP=${VCPKG_DETECTED_CMAKE_STRIP}" "STRIPPROG=${VCPKG_DETECTED_CMAKE_STRIP}" "INSTALL_STRIP_PROGRAM=${VCPKG_DETECTED_CMAKE_STRIP}" "INSTALL_PROGRAM=/usr/bin/install -c")
+            vcpkg_list(APPEND no_parallel_install_opts "STRIP=${VCPKG_DETECTED_CMAKE_STRIP}" "STRIPPROG=${VCPKG_DETECTED_CMAKE_STRIP}" "INSTALL_STRIP_PROGRAM=${VCPKG_DETECTED_CMAKE_STRIP}" "INSTALL_PROGRAM=/usr/bin/install -c")
+        endif()
+    endif()
+
+    if(VCPKG_DETECTED_CMAKE_C_COMPILER)
+        cmake_path(GET VCPKG_DETECTED_CMAKE_C_COMPILER PARENT_PATH z_cctools_dir)
+        if(IS_DIRECTORY "${z_cctools_dir}")
+            vcpkg_add_to_path(PREPEND "${z_cctools_dir}")
+        endif()
     endif()
 
     # Since includes are buildtype independent those are setup by vcpkg_configure_make
