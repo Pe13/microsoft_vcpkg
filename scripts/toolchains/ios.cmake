@@ -67,10 +67,10 @@ if(NOT _VCPKG_IOS_TOOLCHAIN)
                 set(VCPKG_OSX_SYSROOT "$ENV{VCPKG_IOS_SDK_PATH}")
             elseif(DEFINED ENV{SDKROOT} AND EXISTS "$ENV{SDKROOT}")
                 set(VCPKG_OSX_SYSROOT "$ENV{SDKROOT}")
-            elseif(EXISTS "/home/pi/cctools/SDK/iPhoneOS.sdk")
-                set(VCPKG_OSX_SYSROOT "/home/pi/cctools/SDK/iPhoneOS.sdk")
-            elseif(EXISTS "/home/pi/cctools-port/usage_examples/ios_toolchain/target/SDK/iPhoneOS16.5.sdk")
-                set(VCPKG_OSX_SYSROOT "/home/pi/cctools-port/usage_examples/ios_toolchain/target/SDK/iPhoneOS16.5.sdk")
+            elseif(EXISTS "~/cctools/SDK/iPhoneOS.sdk")
+                set(VCPKG_OSX_SYSROOT "~/cctools/SDK/iPhoneOS.sdk")
+            elseif(EXISTS "~/cctools-port/usage_examples/ios_toolchain/target/SDK/iPhoneOS16.5.sdk")
+                set(VCPKG_OSX_SYSROOT "~/cctools-port/usage_examples/ios_toolchain/target/SDK/iPhoneOS16.5.sdk")
             endif()
         endif()
 
@@ -88,8 +88,8 @@ if(NOT _VCPKG_IOS_TOOLCHAIN)
         set(Z_VCPKG_IOS_TARGET_TRIPLE "${_vcpkg_ios_target_architecture}-apple-ios${VCPKG_OSX_DEPLOYMENT_TARGET}")
 
         # 3. Discover cctools-port Compilers and Binutils
-        # Include /home/pi/cctools/bin in HINTS in case PATH is not exported
-        set(Z_CCTOOLS_HINTS "/home/pi/cctools/bin" "/home/pi/cctools-port/usage_examples/ios_toolchain/target/bin")
+        # Include ~/cctools/bin in HINTS in case PATH is not exported
+        set(Z_CCTOOLS_HINTS "~/cctools/bin" "~/cctools-port/usage_examples/ios_toolchain/target/bin")
 
         find_program(Z_VCPKG_C_COMPILER NAMES aarch64-apple-darwin-clang clang HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
         find_program(Z_VCPKG_CXX_COMPILER NAMES aarch64-apple-darwin-clang++ clang++ HINTS ${Z_CCTOOLS_HINTS} REQUIRED)
